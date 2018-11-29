@@ -2,6 +2,7 @@ package comp557.a4;
 
 import javax.vecmath.Point3d;
 import javax.vecmath.Vector3d;
+import javax.vecmath.Vector3f;
 
 /**
  * Class for a plane at y=0.
@@ -27,37 +28,39 @@ public class Plane extends Intersectable {
         
     @Override
     public void intersect( Ray ray, IntersectResult result ) {
-    
-        // TODO: Objective 4: intersection of ray with plane - DONE
-    	Vector3d eye = new Vector3d(ray.eyePoint);
+    	
+        // TODO: Objective 4: intersection of ray with plane
+    	
+    		double t = - ray.eyePoint.y / ray.viewDirection.y;
+    		
+    		if(t < Double.POSITIVE_INFINITY && 1e-9 < t) { // otherwise, parallel to plane
+    			
+    			Point3d point_of_intersection = new Point3d(ray.viewDirection);
+			point_of_intersection.scale(t);
+			point_of_intersection.add(ray.eyePoint);
+			
+			result.p = point_of_intersection;
+    			result.n.set(n);
+    			result.t = t;
+    			
+    			if(material2 != null) {
+    				
+    				int sum = (int)Math.floor(point_of_intersection.x) + (int)Math.floor(point_of_intersection.y) + (int)Math.floor(point_of_intersection.z);
+       			
+    				if((sum & 1) == 0) {
+        				result.material = material;
+        			} else {
+        				result.material = material2;
+        			}
+    				
+    			} else {
+    				result.material = material;
+    			}
 		
-    	if (ray.viewDirection.dot(n) != 0) {
-    	  double t = -(eye.dot(n))/(ray.viewDirection.dot(n));
-    	  if (t < 0 || t > result.t) return;
-    	  Vector3d td = new Vector3d(ray.viewDirection);
-    	  td.scale(t);
-    	  Point3d p = new Point3d(eye);
-    	  p.add(td);
-    	  	
-    	  //If a material is defined, choose the color based on where it is in the checker pattern
-    	  Material m = null;
-    	  boolean x = (((int) Math.ceil(p.x)) % 2) == 0 ? true : false;
-    	  boolean z = (((int) Math.ceil(p.z)) % 2) == 0 ? true : false;
-    	  if (x == z) m = this.material;
-    	  else {
-    	  	if (material2 == null) {
-    	  		m = material;
-    	  	}
-    	  	else {
-    	  		m = material2;
-    	  	}
-    	  }
-    	  	
-    	  result.n.set(n);
-    	  result.p.set(p);
-    	  result.t = t;
-    	  result.material = m;
-    	}
+    		}
+    		
+    	
+    	
     }
     
 }

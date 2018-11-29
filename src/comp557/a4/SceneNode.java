@@ -49,16 +49,33 @@ public class SceneNode extends Intersectable {
     	this.Minv = new Matrix4d();
     	this.children = new LinkedList<Intersectable>();
     }
-           
+    
+    private IntersectResult tmpResult = new IntersectResult();
+    
+    private Ray tmpRay = new Ray();
+    
     @Override
     public void intersect(Ray ray, IntersectResult result) {
-
-    	// TODO: Objective 7: implement hierarchy with instances
-
-    	// this is not going to work, but might help you get
-    	// started with some scenes...
-    	children.get(0).intersect( ray, result );
-    	
+    	tmpRay.eyePoint.set(ray.eyePoint);
+    	tmpRay.viewDirection.set(ray.viewDirection);
+    	Minv.transform(tmpRay.eyePoint);
+    	Minv.transform(tmpRay.viewDirection);    	
+    	tmpResult.t = Double.POSITIVE_INFINITY;
+    	tmpResult.n.set(0, 0, 1);
+        for ( Intersectable s : children ) {
+            s.intersect( tmpRay, tmpResult );
+        }
+        if ( tmpResult.t > 1e-9 && tmpResult.t < result.t ) {
+        	Minv.transpose();
+        	Minv.transform(tmpResult.n);
+        	Minv.transpose();
+        M.transform(tmpResult.p);
+        tmpResult.n.normalize();
+        	result.n.set(tmpResult.n);
+        	result.p.set(tmpResult.p); 
+        	result.t = tmpResult.t;
+        	result.material = (this.material == null) ? tmpResult.material : this.material;
+        }
     }
     
 }

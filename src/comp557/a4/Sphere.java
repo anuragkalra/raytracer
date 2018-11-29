@@ -1,7 +1,10 @@
 package comp557.a4;
-
+import javax.vecmath.Color3f;
 import javax.vecmath.Point3d;
 import javax.vecmath.Vector3d;
+import javax.vecmath.Vector3f;
+
+import javafx.geometry.Point3D;
 
 /**
  * A simple sphere class.
@@ -38,43 +41,74 @@ public class Sphere extends Intersectable {
     @Override
     public void intersect( Ray ray, IntersectResult result ) {
     
-        // TODO: Objective 2: intersection of ray with sphere - DONE ??
-    	double a = ray.viewDirection.dot(ray.viewDirection); 	
-
-		Vector3d ec = new Vector3d(ray.eyePoint);
-		ec.sub(center);
-
-		double b = ray.viewDirection.dot(ec) * 2;   			
-		double c = ec.dot(ec) - Math.pow(radius, 2);
-
-		double discriminant = Math.pow(b, 2) - (4*a*c);
-
-		double t = Double.POSITIVE_INFINITY;
-		if(discriminant < 0){
-			return;    		
-		}else{
-			double t1 = (-b + Math.sqrt(discriminant)) / (2*a);   		
-			double t2 = (-b - Math.sqrt(discriminant)) / (2*a); 
-			if(t1 < t2 && t1 > 0){
-				t = t1;
-			}else if (t1 > t2 && t2 > 0){
-				t = t2;
-			}
-		}    	
-		 
-		//Set intersect result
-		Point3d intersection = new Point3d();
-		ray.getPoint(t, intersection); 		
-		result.p = intersection;
-		result.material = this.material;
-		result.t = t;
-
-		//Normal at point p = (p-c)/r
-		Vector3d normal = new Vector3d(intersection);
-		normal.sub(center);
-		normal.scale(1/this.radius);
-		result.n = normal;
+        // TODO: Objective 2: intersection of ray with sphere
+    		Vector3d e = new Vector3d(ray.eyePoint);
+    		e.sub(this.center);
+    		double a = ray.viewDirection.dot(ray.viewDirection);
+    		double b = 2 * ray.viewDirection.dot(e);
+    		double c = e.dot(e) - this.radius * this.radius;
+    		double discriminant = b*b - 4*a*c;
+    		
+   		if (discriminant == 0.0) {
+   			
+   			double t_pos = -0.5 * b / a;
+   			// scale ray viewDirection to be t_pos length
+			// point of intersection is at ray.eyePoint + scaled viewDirection vector
+			Point3d point_of_intersection = new Point3d(ray.viewDirection);
+			point_of_intersection.scale(t_pos);
+			point_of_intersection.add(ray.eyePoint);
+			
+			// normal is point_of_intersection - sphere.center
+			Vector3d normal = new Vector3d();
+			normal.add(point_of_intersection);
+			normal.sub(this.center);
+			normal.normalize();
+			
+			result.p.set(point_of_intersection);
+			result.material = this.material;
+			result.t = t_pos;
+			result.n.set(normal);
+   			
+   		}
+   		else if (discriminant > 0.0) {
+   			
+   			// solve quadratic formula
+   			double q = (b > 0) ? -0.5 * (b + Math.sqrt(discriminant)) : -0.5 * (b - Math.sqrt(discriminant));
+    			double t_pos = q / a;
+    			double t_neg = c / q;
+    			
+    			if (t_pos < t_neg) {
+    				double temp = t_pos;
+    				t_pos = t_neg;
+    				t_neg = temp;
+    			}
+    				
+    			if (t_neg > 0) {
+    				// scale ray viewDirection to be t_neg length
+    				// point of intersection is at ray.eyePoint + scaled viewDirection vector
+        			Point3d point_of_intersection = new Point3d(ray.viewDirection);
+        			point_of_intersection.scale(t_neg);
+        			point_of_intersection.add(ray.eyePoint);
+        			
+        			// normal is point_of_intersection - sphere.center
+        			Vector3d normal = new Vector3d();
+        			normal.add(point_of_intersection);
+        			normal.sub(this.center);
+        			normal.normalize();
+        			
+        			result.p.set(point_of_intersection);
+        			result.material = this.material;
+        			result.t = t_neg;
+        			result.n.set(normal);
+    			}
 	
+    		}
+    		
+    		
+    		
+    		
+    		
+
     }
     
 }

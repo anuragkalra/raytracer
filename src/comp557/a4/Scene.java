@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.vecmath.Color3f;
+import javax.vecmath.Point3d;
 import javax.vecmath.Vector3d;
 
 /**
@@ -41,43 +42,100 @@ public class Scene {
         int h = cam.imageSize.height;
         
         render.init(w, h, showPanel);
-        
+          
+        // Calculate best number of areas per pizel to use for super sampling
+		int samples = render.samples;
+		double root = Math.sqrt(samples);
+		int rows = 0;
+		int rootFloor = (int) Math.floor(root);
+		int rootCeil = (int) Math.ceil(root);
+		int squareFloor = (int) Math.pow(rootFloor, 2);
+		int squareCeil = (int)Math.pow(rootCeil, 2);
+		if (samples - squareFloor < squareCeil - samples) {
+			rows = (int) Math.sqrt(squareFloor);
+		}
+		else {
+			rows = (int) Math.sqrt(squareCeil);
+		}
+		
+		// Go through every pixel
         for ( int i = 0; i < h && !render.isDone(); i++ ) {
             for ( int j = 0; j < w && !render.isDone(); j++ ) {
             	
-                // TODO: Objective 1: generate a ray (use the generateRay method) - DONE??
-            	Ray ray = new Ray();
-            	double[] offset = {0, 0};
-            	
-            	// compute viewing ray
-            	generateRay(j, i, offset, cam, ray);
-            	//System.out.println("j:	" + j + "	i: " + i);
-            	//System.out.println("eyePoint: " + ray.eyePoint + "	direction:" + ray.viewDirection);
-            	//System.out.println("----");
-            	
-                // TODO: Objective 2: test for intersection with scene surfaces
-            	for(Intersectable intersectable: surfaceList) {
-            		IntersectResult intersectResult = new IntersectResult();
-            		intersectable.intersect(ray, intersectResult);
-            	}
-            	
-                // TODO: Objective 3: compute the shaded result for the intersection point (perhaps requiring shadow rays)
+            	// Accumulate the colors and average them for supersampling
+            	int tempr = 0;
+            	int tempg = 0;
+            	int tempb = 0;
+            	double samplecenter = 0;
+                double[] offset = new double[2];
                 
-            	// TODO: Objective 8: do antialiasing by sampling more than one ray per pixel
-            	
-            	// Here is an example of how to calculate the pixel value.
-            	Color3f c = new Color3f(render.bgcolor);
-            	int r = (int)(255*c.x);
-                int g = (int)(255*c.y);
-                int b = (int)(255*c.z);
+                //Go through each of the areas of the pixel
+                for (int k = 0; k < rows; k++) {
+                	if (render.jitter) {
+                		samplecenter = Math.random()*(1/(double)rows);
+                	}
+                	else {
+                		samplecenter = (1/(double)rows)/2;
+                	}
+                	//Jitter sets a random offset instead of the default uniform one (middle of the area)
+                	offset[0] = k/(double)rows + samplecenter;
+                	for (int l = 0; l < rows; l++) {
+                		if (render.jitter) {
+                    		samplecenter = (Math.random()*(1/(double)rows));
+                    	}
+                    	else {
+                    		samplecenter = (1/(double)rows)/2;
+                    	}
+                    	offset[1] = l/(double)rows + samplecenter;
+                    	
+                    	// Get the ray going through the area with offset
+                    	Ray ray = new Ray();
+                        generateRay(j, i, offset, cam, ray);
+
+                        //Go through every surface and check which surface the ray intersects first
+        				IntersectResult closestResult = new IntersectResult();
+        				for (Intersectable in: surfaceList) {
+        					IntersectResult result = new IntersectResult();
+        					in.intersect(ray, result);
+        					if (result.t != Double.POSITIVE_INFINITY) {
+        						if (closestResult.t == Double.POSITIVE_INFINITY || result.t < closestResult.t) {
+        							closestResult = result;							
+        						}
+        					} 
+        				}
+        				
+        				//Get the color of that surface based on the lighting and material (or draw a background)
+                    	Color3f c = new Color3f();
+        				if (closestResult.t == Double.POSITIVE_INFINITY) {				
+        					c.set(render.bgcolor);
+        				}
+        				else {	
+        					getLightingCol(closestResult, c, ray);
+        				}
+
+        				//Add to the cumulative color
+                		tempr += 255*c.x;
+                		tempg += 255*c.y;
+                		tempb += 255*c.z;
+                		
+                	}
+                	
+                }
+            	       
+                //Average the cumulative color of the pixel
+            	int r = (int)(tempr/Math.pow(rows, 2));
+                int g = (int)(tempg/Math.pow(rows, 2));
+                int b = (int)(tempb/Math.pow(rows, 2));
+                
+				if (r > 255) r = 255;
+				if (g > 255) g = 255;
+				if (b > 255) b = 255;
+				              
                 int a = 255;
                 int argb = (a<<24 | r<<16 | g<<8 | b);    
                 
                 // update the render image
                 render.setPixel(j, i, argb);
-                
-                
-                
             }
         }
         
@@ -87,6 +145,41 @@ public class Scene {
         // wait for render viewer to close
         render.waitDone();
         
+    }
+    
+    //Get the color of an intersection point
+    private void getLightingCol(IntersectResult intersection, Color3f c, Ray ray) {
+
+    	//Ambient 
+    	c.x += ambient.x*intersection.material.diffuse.x;
+		c.y += ambient.y*intersection.material.diffuse.y;
+		c.z += ambient.z*intersection.material.diffuse.z;
+		
+		for (Light l: lights.values()) {	
+			
+			//No light comes from a shaded object
+			if (!inShadow(intersection, l)) {
+
+				Vector3d lightdir = new Vector3d(l.from);
+				lightdir.sub(intersection.p);
+				lightdir.normalize();
+				
+				//Lambertian
+				c.x += (float)(l.color.x*l.power*intersection.material.diffuse.x*Math.max(0, intersection.n.dot(lightdir)));
+				c.y += (float)(l.color.y*l.power*intersection.material.diffuse.y*Math.max(0, intersection.n.dot(lightdir)));
+				c.z += (float)(l.color.z*l.power*intersection.material.diffuse.z*Math.max(0, intersection.n.dot(lightdir)));
+
+				Vector3d half = new Vector3d(ray.viewDirection);
+				half.negate();
+				half.add(lightdir);
+				half.normalize();
+				
+				//Blinn-Phong
+				c.x += (float)(l.power*intersection.material.specular.x*Math.pow(Math.max(0, half.dot(intersection.n)), intersection.material.shinyness));
+				c.y += (float)(l.power*intersection.material.specular.y*Math.pow(Math.max(0, half.dot(intersection.n)), intersection.material.shinyness));
+				c.z += (float)(l.power*intersection.material.specular.z*Math.pow(Math.max(0, half.dot(intersection.n)), intersection.material.shinyness));
+			}
+		}
     }
     
     /**
@@ -99,18 +192,7 @@ public class Scene {
      * @param ray Contains the generated ray.
      */
 	public static void generateRay(final int i, final int j, final double[] offset, final Camera cam, Ray ray) {
-		
-		// TODO: Objective 1: generate rays given the provided parmeters
-		
-		//S = E + uU + vV - dW
-		//P = E
-		//D = S - E
-		//R(t) = P + tD
-		
-		//Pixel to image mapping
-		//u = l + (r - l)(i + 0.5)/n_x
-		//v = b + (t - b)(j + 0.5)/n_y
-		
+
 		ray.eyePoint.set(cam.from);
 
 		double w = cam.imageSize.width;
@@ -126,7 +208,7 @@ public class Scene {
 		double bottom = -screentop;
 		double u = left + (right - left)*(i + offset[0])/w; 
 		double v = top - (top - bottom)*(j + offset[1])/h; 
-		
+
 		//calculate the view Direction of the ray
 		Vector3d cameraZ = new Vector3d(cam.from);
 		cameraZ.sub(cam.to);
@@ -149,8 +231,6 @@ public class Scene {
 		s.sub(cam.from);
 		s.normalize();
 		ray.viewDirection.set(s);
-		
-
 	}
 
 	/**
@@ -158,16 +238,37 @@ public class Scene {
 	 * 
 	 * @param result Intersection result from raytracing. 
 	 * @param light The light to check for visibility.
-	 * @param root The scene node.
-	 * @param shadowResult Contains the result of a shadow ray test.
-	 * @param shadowRay Contains the shadow ray used to test for visibility.
 	 * 
 	 * @return True if a point is in shadow, false otherwise. 
 	 */
-	public static boolean inShadow(final IntersectResult result, final Light light, final SceneNode root, IntersectResult shadowResult, Ray shadowRay) {
+	public boolean inShadow(final IntersectResult result, final Light light) {
 		
-		// TODO: Objective 5: check for shdows and use it in your lighting computation
+		Ray shadowRay = new Ray();
+		IntersectResult shadowResult = new IntersectResult();
 		
+		Vector3d l = new Vector3d();
+		l.sub(light.from, result.p);
+		Vector3d l2 = new Vector3d(l);
+		l2.normalize();
+		
+		//The shadow ray starts a little bit away from the point to prevent weird effects
+		Point3d shadowOrigin = new Point3d(result.p);
+		Vector3d space = new Vector3d(l2);
+		space.scale(0.000001);
+		shadowOrigin.add(space);
+		
+		shadowRay.eyePoint = shadowOrigin;
+		shadowRay.viewDirection = new Vector3d(l2);
+		double tMax = l.length();
+		
+		// Go through the other objects and see if one is between the point and the light source
+		for (Intersectable in: surfaceList) {
+			shadowResult = new IntersectResult();
+			in.intersect(shadowRay, shadowResult);
+			if (shadowResult.t != Double.POSITIVE_INFINITY) {
+				if (shadowResult.t <= tMax) return true;						
+			}
+		}
 		return false;
 	}    
 }
